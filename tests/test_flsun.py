@@ -1,0 +1,195 @@
+"""The FLSUN T1 platform on the FF_NFC core, against a minimal fake Klipper."""
+import os
+import sys
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "python"))
+
+from ffnfc import klipper_plugin  # noqa: E402
+from ffnfc.tag import Tag  # noqa: E402
+from flsunnfc import platform  # noqa: E402
+
+platform.register()
+
+
+class CommandError(Exception):
+    pass
+
+
+class FakeReactor(object):
+    NEVER = 9999999999.
+
+    def monotonic(self):
+        return 100.
+
+    def register_timer(self, callback, waketime=None):
+        return callback
+
+    def update_timer(self, timer, waketime):
+        pass
+
+    def register_async_callback(self, callback):
+        callback(100.)
+
+
+class FakeGcode(object):
+    def __init__(self):
+        self.commands, self.raw, self.info, self.scripts = {}, [], [], []
+        self.ready_gcode_handlers = self.commands
+
+    def register_command(self, name, fn, desc=None):
+        self.commands[name] = fn
+
+    def respond_raw(self, msg):
+        self.raw.append(msg)
+
+    def respond_info(self, msg):
+        self.info.append(msg)
+
+    def run_script(self, script):
+        self.scripts.append(script)
+
+    run_script_from_command = run_script
+
+
+class FakeWebhooks(object):
+    def __init__(self):
+        self.calls = []
+
+    def register_endpoint(self, path, callback):
+        pass
+
+    def call_remote_method(self, method, **kwargs):
+        self.calls.append((method, kwargs))
+
+
+class FakeSensor(object):
+    class runout_helper(object):
+        filament_present = True
+
+
+class FakePrinter(object):
+    command_error = CommandError
+
+    def __init__(self, objects):
+        self.objects = objects
+        self.reactor = FakeReactor()
+
+    def get_reactor(self):
+        return self.reactor
+
+    def lookup_object(self, name, default=None):
+        return self.objects.get(name, default)
+
+    def register_event_handler(self, event, fn):
+        pass
+
+
+class FakeConfig(object):
+    error = ValueError
+
+    def __init__(self, printer, options):
+        self.printer, self.options = printer, options
+
+    def get_printer(self):
+        return self.printer
+
+    def get(self, name, default=None):
+        return self.options.get(name, default)
+
+    def getint(self, name, default=None, **kw):
+        return int(self.options.get(name, default))
+
+    def getfloat(self, name, default=None, **kw):
+        return float(self.options.get(name, default))
+
+    def getboolean(self, name, default=None):
+        value = self.options.get(name, default)
+        return value if isinstance(value, bool) else str(value).lower() in ("1", "true")
+
+    def getchoice(self, name, choices, default=None):
+        return choices[self.options.get(name, default)]
+
+    def get_prefix_sections(self, prefix):
+        return []
+
+
+def text_tag(text, uid=b"\x04\x11\x22\x33\x44\x55\x66"):
+    """An NTAG215 with one NDEF text record."""
+    payload = b"\x02en" + text.encode()
+    record = bytes([0xD1, 1, len(payload)]) + b"T" + payload
+    memory = bytearray(135 * 4)
+    memory[0:7] = uid[:3] + b"\x88" + uid[3:6]
+    memory[12:16] = bytes([0xE1, 0x10, 131 * 4 // 8, 0x00])
+    data = bytes([0x03, len(record)]) + record + b"\xfe"
+    memory[16:16 + len(data)] = data
+    return Tag(uid, "iso14443a", "type2", bytes(memory), sak=0x00)
+
+
+def make_plugin(options=None):
+    gcode, webhooks = FakeGcode(), FakeWebhooks()
+    objects = {"gcode": gcode, "webhooks": webhooks,
+               "filament_switch_sensor filament_sensor": FakeSensor()}
+    printer = FakePrinter(objects)
+    options = dict({"lane_data": False, "spoolman": False}, **(options or {}))
+    plugin = klipper_plugin.load_config(FakeConfig(printer, options), "flsun")
+    plugin.platform.ready()
+    return plugin, gcode, webhooks
+
+
+class FlsunPlatformTest(unittest.TestCase):
+    def test_scan_assigns_without_prompt(self):
+        plugin, gcode, webhooks = make_plugin()
+        written = []
+        plugin._write_lane_data = lambda slot, info: written.append((slot, info))
+        scan = plugin._process(text_tag("PETG:00FF00"))
+        self.assertEqual(plugin._handle_scan(scan), "assigned")
+        self.assertFalse(any("prompt_begin" in r for r in gcode.raw))
+        self.assertEqual(written[0][0], 1)
+        self.assertEqual((written[0][1]["material"], written[0][1]["color"]), ("PETG", "00FF00"))
+        # Not a Spoolman spool: the active spool is cleared.
+        self.assertEqual(webhooks.calls, [("spoolman_set_active_spool", {"spool_id": None})])
+        self.assertIn("The toolhead now has PETG #00FF00", gcode.info[-1])
+        self.assertTrue(plugin._slots()["slots"][1]["loaded"])
+
+    def test_keep_active_spool(self):
+        plugin, gcode, webhooks = make_plugin({"clear_active_spool": False})
+        plugin._handle_scan(plugin._process(text_tag("PLA:112233")))
+        self.assertEqual(webhooks.calls, [])
+
+    def test_spoolman_spool_becomes_active(self):
+        plugin, gcode, webhooks = make_plugin()
+        bound = []
+
+        class FakeSpoolman(object):
+            def bind_uid(self, spool, uid, fmt=None):
+                bound.append((spool["id"], uid))
+
+        plugin.spoolman = FakeSpoolman()
+        plugin._in_background = lambda fn, *args: fn(*args)
+        scan = plugin._process(text_tag("PLA:112233"))
+        scan.spool = {"id": 20, "filament": {"material": "PLA", "color_hex": "112233"},
+                      "extra": {}, "tags": []}
+        plugin._handle_scan(scan)
+        self.assertEqual(webhooks.calls, [("spoolman_set_active_spool", {"spool_id": 20})])
+        self.assertEqual(bound, [(20, scan.uid)])
+        self.assertIn("Spoolman spool 20", gcode.info[-1])
+
+    def test_ch340_ports_never_probed(self):
+        plugin, _, _ = make_plugin()
+        original = platform.usb_serial_ports
+        platform.usb_serial_ports = lambda: [("/dev/ttyUSB0", "1a86", "7523", "USB Serial"),
+                                             ("/dev/ttyUSB1", "10c4", "ea60", "CP2102")]
+        try:
+            self.assertEqual(list(plugin.excluded_ports), ["/dev/ttyUSB0"])
+        finally:
+            platform.usb_serial_ports = original
+
+    def test_named_device_is_not_excluded(self):
+        plugin, _, _ = make_plugin({"device": "/dev/ttyUSB1"})
+        self.assertEqual(list(plugin.excluded_ports), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
