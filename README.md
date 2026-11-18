@@ -15,19 +15,11 @@ FLSUN_NFC is the T1 version of [FF_NFC](https://github.com/DIEHARDave/FF_NFC) (F
 | Reader | How it connects | Notes |
 |---|---|---|
 | ACR122U, ACR1552U and other USB CCID readers | USB | Found automatically |
-| PN532 board with a CP2102, PL2303 or FTDI USB adapter | USB serial | Found automatically |
-| PN532 board with a **CH340** USB adapter | USB serial | Set `device:` (see below) |
+| PN532 board with a CH340, CP2102, PL2303 or FTDI USB adapter | USB serial | Found automatically |
 | ESP32 / RP2040 running [rfidnfc2usb_bridge](https://github.com/DIEHARDave/rfidnfc2usb_bridge) (PN532, RC522, PN5180) | USB serial | Found automatically |
 | [LaneTag](https://github.com/DIEHARDave/LaneTag) Wi-Fi reader | Network | Nothing to set up on the printer |
 
-**CH340 readers:** the T1's mainboard is a CH340 too, so FLSUN_NFC never probes CH340 ports by itself. Name the reader's port by its USB socket in `flsun_nfc_user.cfg`:
-
-```ini
-[flsun_nfc]
-device: /dev/serial/by-path/<the reader's entry>
-```
-
-`ls -l /dev/serial/by-path` over SSH lists the entries. Don't use `/dev/serial/by-id` for a CH340 reader: two CH340s get the same by-id name, and Klipper could then open the reader as the mainboard.
+**CH340 readers:** the T1's mainboard is a CH340 too, and a CH340 reader gets the same `/dev/serial/by-id` name as the mainboard (`usb-1a86_USB_Serial-if00-port0`). Without a fix, that name would point to whichever was plugged in last, and Klipper would open the reader as the mainboard at its next restart. install.sh adds a udev rule that keeps the name on the mainboard's internal USB port. FLSUN_NFC never probes that port. On a printer whose mainboard isn't on that port, FLSUN_NFC probes no CH340 at all, and a CH340 reader needs `device:` set to its `/dev/serial/by-path` name.
 
 ## Install
 
@@ -44,7 +36,7 @@ The installer:
 
 - links the Klipper module into upstream Klipper (FLSUN_klipper) and FLSun's own Klipper,
 - adds `[include flsun_nfc.cfg]` to printer.cfg (above the SAVE_CONFIG block),
-- installs a udev rule so Klipper (user pi) can open USB readers,
+- installs udev rules: one so Klipper (user pi) can open USB readers, one that keeps the mainboard's serial name on the mainboard,
 - adds the Moonraker update manager entry (`flsun_nfc.conf`).
 
 It then restarts Moonraker and Klipper, unless a print is running.

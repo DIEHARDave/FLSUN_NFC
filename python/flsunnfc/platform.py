@@ -10,11 +10,15 @@ clear_active_spool), so usage isn't booked on the spool that was loaded
 before.
 
 The T1's mainboard is a CH340 USB serial chip (1a86:7523, no serial
-number). A second CH340, such as a PN532 board, gets the same
-/dev/serial/by-id name, so neither port is safe to probe: CH340 ports are
-only opened when [flsun_nfc] names one with device:."""
+number) on an internal USB port. Its port is never probed: the one at
+MAINBOARD_PATH, and the one the mainboard's by-id name points to. If this
+printer has no port at MAINBOARD_PATH, no CH340 port is probed unless
+[flsun_nfc] names one with device:. A CH340 reader gets the same by-id name
+as the mainboard; install.sh's udev rule (61-flsun-nfc-mcu.rules) keeps that
+name on the mainboard."""
 
 import logging
+import os
 
 from ffnfc.lane_data import LaneData
 from ffnfc.spoolman import is_bound
@@ -24,6 +28,8 @@ from ffnfc.transport.serial_port import usb_serial_ports
 LOGGER = logging.getLogger("ff_nfc")
 
 CH340_VID = "1a86"
+MAINBOARD_PATH = "/dev/serial/by-path/platform-xhci-hcd.0.auto-usb-0:1:1.0-port0"
+MAINBOARD_ID = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
 # nginx serves the camera (mjpg-streamer) under /webcam/.
 QR_URL = "http://127.0.0.1/webcam/?action=snapshot"
 QR_WIDTH = 1024
@@ -32,15 +38,21 @@ OPTIONS = ("filament_sensor", "clear_active_spool")
 
 
 class Ch340Excluded(list):
-    """The configured excluded ports, plus every CH340 tty present at the
-    moment the reader search iterates it (readers are looked for again
-    every retry_interval, so a board plugged in later is skipped too)."""
+    """The configured excluded ports, plus the mainboard's port, worked out
+    each time the reader search iterates it (readers are looked for again
+    every retry_interval, after USB devices came and went)."""
 
     def __iter__(self):
         ports = list(list.__iter__(self))
-        for path, vid, _pid, _product in usb_serial_ports():
-            if vid == CH340_VID:
-                ports.append(path)
+        if os.path.exists(MAINBOARD_PATH):
+            ports.append(MAINBOARD_PATH)
+            if os.path.exists(MAINBOARD_ID):
+                ports.append(MAINBOARD_ID)
+        else:
+            # Unknown USB layout: no CH340 is safe to probe.
+            for path, vid, _pid, _product in usb_serial_ports():
+                if vid == CH340_VID:
+                    ports.append(path)
         return iter(ports)
 
 

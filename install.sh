@@ -9,7 +9,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${HOME}/printer_data/config"
 PRINTER_CFG="${CONFIG_DIR}/printer.cfg"
 MOONRAKER_CONF="${CONFIG_DIR}/moonraker.conf"
-UDEV_RULE="/etc/udev/rules.d/99-flsun-nfc.rules"
+UDEV_RULES="99-flsun-nfc.rules 61-flsun-nfc-mcu.rules"
 INCLUDE="[include flsun_nfc.cfg]"
 SAVE_MARK="#*# <---------------------- SAVE_CONFIG ---------------------->"
 
@@ -52,9 +52,20 @@ if ! grep -qF "$INCLUDE" "$PRINTER_CFG"; then
 fi
 
 msg "Giving Klipper (user pi) access to USB readers"
-sudo install -m 644 "${REPO_DIR}/system/99-flsun-nfc.rules" "$UDEV_RULE"
+# 61-...: keeps the mainboard's /dev/serial/by-id name on the mainboard
+# when a CH340 reader is plugged in.
+for rule in $UDEV_RULES; do
+    sudo install -m 644 "${REPO_DIR}/system/${rule}" "/etc/udev/rules.d/${rule}"
+done
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=usb --action=add
+sudo udevadm trigger --subsystem-match=tty --action=add
+sudo udevadm settle
+mainboard=$(readlink -f /dev/serial/by-path/platform-xhci-hcd.0.auto-usb-0:1:1.0-port0 2> /dev/null || true)
+byid=$(readlink -f /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 2> /dev/null || true)
+if [ -n "$mainboard" ] && [ "$mainboard" != "$byid" ]; then
+    die "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 points to $byid, not the mainboard ($mainboard). Unplug CH340 USB devices other than the mainboard and run install.sh again; don't restart Klipper until then."
+fi
 for group in dialout plugdev; do
     id -nG | tr ' ' '\n' | grep -qx "$group" || sudo usermod -aG "$group" "$USER"
 done

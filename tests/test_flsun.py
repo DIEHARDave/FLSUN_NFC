@@ -176,15 +176,27 @@ class FlsunPlatformTest(unittest.TestCase):
         self.assertEqual(bound, [(20, scan.uid)])
         self.assertIn("Spoolman spool 20", gcode.info[-1])
 
-    def test_ch340_ports_never_probed(self):
-        plugin, _, _ = make_plugin()
-        original = platform.usb_serial_ports
+    def fake_ports(self, mainboard_present):
+        originals = (platform.usb_serial_ports, platform.os.path.exists)
         platform.usb_serial_ports = lambda: [("/dev/ttyUSB0", "1a86", "7523", "USB Serial"),
-                                             ("/dev/ttyUSB1", "10c4", "ea60", "CP2102")]
-        try:
-            self.assertEqual(list(plugin.excluded_ports), ["/dev/ttyUSB0"])
-        finally:
-            platform.usb_serial_ports = original
+                                             ("/dev/ttyUSB1", "1a86", "7523", "USB Serial"),
+                                             ("/dev/ttyUSB2", "10c4", "ea60", "CP2102")]
+        platform.os.path.exists = lambda path: mainboard_present
+
+        def restore():
+            platform.usb_serial_ports, platform.os.path.exists = originals
+        self.addCleanup(restore)
+
+    def test_only_the_mainboard_port_is_excluded(self):
+        plugin, _, _ = make_plugin()
+        self.fake_ports(True)
+        self.assertEqual(list(plugin.excluded_ports),
+                         [platform.MAINBOARD_PATH, platform.MAINBOARD_ID])
+
+    def test_unknown_layout_excludes_every_ch340(self):
+        plugin, _, _ = make_plugin()
+        self.fake_ports(False)
+        self.assertEqual(list(plugin.excluded_ports), ["/dev/ttyUSB0", "/dev/ttyUSB1"])
 
     def test_named_device_is_not_excluded(self):
         plugin, _, _ = make_plugin({"device": "/dev/ttyUSB1"})

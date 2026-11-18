@@ -20,8 +20,8 @@ done
 sed -i '/^\[include flsun_nfc\.cfg\]/d' "$PRINTER_CFG"
 rm -f "${CONFIG_DIR}/flsun_nfc.cfg"
 
-msg "Removing the USB reader rule"
-sudo rm -f /etc/udev/rules.d/99-flsun-nfc.rules
+msg "Removing the USB reader rules"
+sudo rm -f /etc/udev/rules.d/99-flsun-nfc.rules /etc/udev/rules.d/61-flsun-nfc-mcu.rules
 sudo udevadm control --reload-rules
 
 msg "Removing the Moonraker settings"
