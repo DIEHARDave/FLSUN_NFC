@@ -4,7 +4,7 @@ NFC/RFID filament tags on the FLSUN T1 / T1 Pro. Scan a spool's tag and:
 
 - the spool becomes Moonraker's **active spool** in Spoolman, so its filament use is tracked,
 - the tag's UID is linked to the Spoolman spool, so plain tags work next time,
-- the spool's material, color and temperatures go to Moonraker's **lane_data** (lane 1), which OrcaSlicer and HelixScreen read.
+- the spool's material, color and temperatures go to Moonraker's **lane_data** (lane 1), which OrcaSlicer and HelixScreen read, plus `filament_id` from the Spoolman filament's `orca_filament_id` extra field, so OrcaSlicer picks that exact filament preset.
 
 The T1 has one toolhead, so there's no slot prompt: whatever you scan is the spool on the printer. A tag with no Spoolman spool clears the active spool, so filament isn't booked on the spool that was loaded before (`clear_active_spool: False` turns that off).
 
