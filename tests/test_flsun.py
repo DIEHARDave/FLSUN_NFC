@@ -198,6 +198,95 @@ class FlsunPlatformTest(unittest.TestCase):
         self.fake_ports(False)
         self.assertEqual(list(plugin.excluded_ports), ["/dev/ttyUSB0", "/dev/ttyUSB1"])
 
+    # --- With FLSUN_AFC -----------------------------------------------------
+
+    def make_afc_plugin(self, current=None, weight_check=True):
+        plugin, gcode, webhooks = make_plugin()
+
+        class Lane(object):
+            def __init__(self, name, prep, spool_id=None):
+                self.name, self.prep_state, self.spool_id = name, prep, spool_id
+                self.material, self.color = "PLA", "#ff0000"
+
+        class Function(object):
+            def get_current_lane(self):
+                return current
+
+        class Afc(object):
+            pass
+        afc = Afc()
+        afc.lanes = {"lane1": Lane("lane1", True), "lane2": Lane("lane2", False, 20),
+                     "lane3": Lane("lane3", False)}
+        afc.function = Function()
+        afc.disable_weight_check = not weight_check
+        plugin.printer.objects["AFC"] = afc
+        written = []
+        plugin._write_lane_data = lambda slot, info: written.append((slot, info))
+        return plugin, gcode, webhooks, afc, written
+
+    def spool_scan(self, plugin, spool_id=20, weight=500):
+        scan = plugin._process(text_tag("PLA:112233"))
+        scan.spool = {"id": spool_id, "remaining_weight": weight, "extra": {}, "tags": [],
+                      "filament": {"material": "PLA", "color_hex": "112233"}}
+        return scan
+
+    def test_afc_lanes_are_the_slots(self):
+        plugin, gcode, _, _, _ = self.make_afc_plugin(current="lane2")
+        slots = plugin._slots()
+        self.assertEqual(sorted(slots["slots"]), [1, 2, 3])
+        self.assertEqual(slots["current"], 2)
+        self.assertTrue(slots["presence"])
+        self.assertEqual(slots["slots"][1], {"material": "PLA", "color": "FF0000", "loaded": True})
+        self.assertEqual(plugin.platform.slot_label(slots, 3), "Lane lane3")
+
+    def test_afc_scan_asks_for_a_lane(self):
+        plugin, gcode, webhooks, _, written = self.make_afc_plugin()
+        self.assertEqual(plugin._handle_scan(self.spool_scan(plugin)), "prompt")
+        self.assertTrue(any("NFC_ASSIGN SLOT=3" in r for r in gcode.raw))
+        self.assertEqual((webhooks.calls, written), ([], []))
+
+    def test_afc_spool_goes_to_the_lane(self):
+        plugin, gcode, webhooks, _, written = self.make_afc_plugin()
+        plugin.pending = self.spool_scan(plugin)
+        plugin._assign(plugin.pending, 3, gcode.respond_info, gcode.run_script)
+        # Spool 20 was on lane2: AFC refuses it on two lanes, so it leaves there.
+        self.assertEqual(gcode.scripts, ["SET_SPOOL_ID LANE=lane2 SPOOL_ID=",
+                                         "SET_SPOOL_ID LANE=lane3 SPOOL_ID=20"])
+        # AFC sets the active spool and lane_data, not FLSUN_NFC.
+        self.assertEqual((webhooks.calls, written), ([], []))
+        self.assertIn("Lane lane3 is now", gcode.info[-1])
+
+    def test_afc_refused_spool_is_reported(self):
+        plugin, gcode, _, afc, _ = self.make_afc_plugin()
+        plugin._assign(self.spool_scan(plugin, spool_id=33), 1, gcode.respond_info,
+                       gcode.run_script)
+        plugin.platform._check_spools(200.)
+        self.assertIn("AFC did not take Spoolman spool 33", gcode.info[-1])
+        afc.lanes["lane1"].spool_id = 33
+        plugin.platform._check_later("lane1", 33, "Lane lane1")
+        gcode.info.clear()
+        plugin.platform._check_spools(200.)
+        self.assertEqual(gcode.info, [])
+
+    def test_afc_empty_spool_is_left_out(self):
+        plugin, gcode, _, _, _ = self.make_afc_plugin()
+        plugin._assign(self.spool_scan(plugin, weight=0), 1, gcode.respond_info, gcode.run_script)
+        self.assertEqual(gcode.scripts, [])
+        self.assertIn("no filament left", gcode.info[-1])
+
+    def test_afc_tag_without_spool_sets_material_and_color(self):
+        plugin, gcode, webhooks, _, written = self.make_afc_plugin()
+        plugin._assign(plugin._process(text_tag("PETG:00FF00")), 2, gcode.respond_info,
+                       gcode.run_script)
+        self.assertEqual(gcode.scripts, ["SET_SPOOL_ID LANE=lane2 SPOOL_ID=",
+                                         "SET_MATERIAL LANE=lane2 MATERIAL=PETG",
+                                         "SET_COLOR LANE=lane2 COLOR=00FF00"])
+        self.assertEqual((webhooks.calls, written), ([], []))
+
+    def test_afc_material_is_one_word(self):
+        self.assertEqual(platform.afc_material("PLA SILK"), "PLA-SILK")
+        self.assertIsNone(platform.afc_material("  "))
+
     def test_named_device_is_not_excluded(self):
         plugin, _, _ = make_plugin({"device": "/dev/ttyUSB1"})
         self.assertEqual(list(plugin.excluded_ports), [])
