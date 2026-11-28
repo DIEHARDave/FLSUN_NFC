@@ -1,5 +1,10 @@
 # FLSUN_NFC
 
+> **Moved to [lanetag-nfc](https://github.com/DIEHARDave/lanetag-nfc)** (LaneTag USB), one plugin for the T1, Flashforge and other Klipper printers. This repository gets no more changes.
+>
+> * **With FLSUN_Updater:** nothing to do. FLSUN_Updater v0.2.0 and newer swap FLSUN_NFC for lanetag-nfc at their next run, with the same `[flsun_nfc]` settings and `flsun_nfc_user.cfg`.
+> * **Installed by hand:** as the pi user, `cd ~ && git clone https://github.com/DIEHARDave/lanetag-nfc.git && ~/lanetag-nfc/flsun/install.sh`. It takes over in place (same module, config and udev rules) and moves the update entry; then delete `~/FLSUN_NFC`.
+
 NFC/RFID filament tags on the FLSUN T1 / T1 Pro. Scan a spool's tag and:
 
 - the spool becomes Moonraker's **active spool** in Spoolman, so its filament use is tracked,
