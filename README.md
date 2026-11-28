@@ -23,7 +23,7 @@ FLSUN_NFC is the T1 version of [FF_NFC](https://github.com/DIEHARDave/lanetag-nf
 |---|---|---|
 | ACR122U, ACR1552U and other USB CCID readers | USB | Found automatically |
 | PN532 board with a CH340, CP2102, PL2303 or FTDI USB adapter | USB serial | Found automatically |
-| ESP32 / RP2040 running [rfidnfc2usb_bridge](https://github.com/DIEHARDave/rfidnfc2usb_bridge) (PN532, RC522, PN5180) | USB serial | Found automatically |
+| ESP32 / RP2040 running [LaneTag USB bridge](https://github.com/DIEHARDave/lanetag-usb-bridge) (PN532, RC522, PN5180) | USB serial | Found automatically |
 | [LaneTag](https://github.com/DIEHARDave/LaneTag) Wi-Fi reader | Network | Nothing to set up on the printer |
 
 **CH340 readers:** the T1's mainboard is a CH340 too, and a CH340 reader gets the same `/dev/serial/by-id` name as the mainboard (`usb-1a86_USB_Serial-if00-port0`). Without a fix, that name would point to whichever was plugged in last, and Klipper would open the reader as the mainboard at its next restart. install.sh adds a udev rule that keeps the name on the mainboard's internal USB port. FLSUN_NFC never probes that port. On a printer whose mainboard isn't on that port, FLSUN_NFC probes no CH340 at all, and a CH340 reader needs `device:` set to its `/dev/serial/by-path` name.
