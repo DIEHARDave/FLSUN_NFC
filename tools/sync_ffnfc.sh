@@ -13,7 +13,7 @@ TMP=""
 if [ -z "$SRC" ]; then
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
-    git clone -q --filter=blob:none https://github.com/DIEHARDave/FF_NFC.git "$TMP/FF_NFC"
+    git clone -q --filter=blob:none https://github.com/DIEHARDave/lanetag-nfc.git "$TMP/FF_NFC"
     SRC="$TMP/FF_NFC"
 fi
 COMMIT="$(git -C "$SRC" rev-parse "${REF}^{commit}")"

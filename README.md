@@ -10,7 +10,7 @@ The T1 has one toolhead, so there's no slot prompt: whatever you scan is the spo
 
 **With [FLSUN_AFC](https://github.com/DIEHARDave/FLSUN_AFC)** (a filament changer such as a BoxTurtle on the T1), the slots are AFC's lanes. A scan opens a prompt asking which lane the spool goes to; inserting the filament into a lane while the prompt is open picks that lane. A Spoolman spool goes to the lane with `SET_SPOOL_ID`, and AFC then keeps it, makes it the active spool when the lane loads and writes lane_data. FLSUN_NFC doesn't set those itself then. A spool that is still on another lane leaves that lane, and an empty spool (remaining weight 0, which AFC refuses) is left out with a message. A tag without a Spoolman spool sets the lane's material and color (`SET_MATERIAL`, `SET_COLOR`). Not tested with a real unit yet.
 
-FLSUN_NFC is the T1 version of [FF_NFC](https://github.com/DIEHARDave/FF_NFC) (Flashforge AD5X / Creator 5 Pro). It carries a pinned copy of FF_NFC's reader and tag code, so it reads the same tags: Spoolman, OpenPrintTag, OpenTag3D, OpenSpool, SpoolEase, Bambu, Creality, Snapmaker, TigerTag, Anycubic, Elegoo, Qidi and plain text (`PLA:FF0000`). It also reads spool QR labels with the printer camera (`SCAN_QR_LABEL`).
+FLSUN_NFC is the T1 version of [FF_NFC](https://github.com/DIEHARDave/lanetag-nfc) (Flashforge AD5X / Creator 5 Pro). It carries a pinned copy of FF_NFC's reader and tag code, so it reads the same tags: Spoolman, OpenPrintTag, OpenTag3D, OpenSpool, SpoolEase, Bambu, Creality, Snapmaker, TigerTag, Anycubic, Elegoo, Qidi and plain text (`PLA:FF0000`). It also reads spool QR labels with the printer camera (`SCAN_QR_LABEL`).
 
 ## Readers
 
